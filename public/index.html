@@ -1,1 +1,928 @@
-Hello World
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rare Find: a daily deep dive</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #eef7ff;
+    --muted: #a8c3dd;
+    --glass: rgba(5, 14, 34, .72);
+    --edge: rgba(150, 210, 255, .18);
+    --accent: #3fd0c9;
+    --gold: #ffd34a;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; }
+  body {
+    background: #04122a; color: var(--ink);
+    font-family: "Bricolage Grotesque", "Trebuchet MS", system-ui, sans-serif;
+  }
+  #sea { position: fixed; inset: 0; width: 100%; height: 100%; display: block; z-index: 0; }
+  main { position: relative; z-index: 1; max-width: 540px; margin: 0 auto; padding: 22px 18px 40px; }
+
+  header { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+  .logo { font-weight: 800; font-size: 23px; text-shadow: 0 2px 14px rgba(0, 0, 0, .5); }
+  .gem { color: var(--gold); text-shadow: 0 0 14px var(--gold); margin-right: 5px; }
+  .gauge {
+    text-align: right; padding: 7px 14px; border-radius: 14px;
+    background: var(--glass); border: 1px solid var(--edge);
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  }
+  .gauge b { display: block; font-size: 22px; font-variant-numeric: tabular-nums; }
+  .gauge span { font-size: 13px; color: var(--muted); }
+
+  #dots { display: flex; gap: 6px; margin: 18px 0; }
+  .dot { flex: 1; height: 6px; border-radius: 3px; background: rgba(150, 210, 255, .18); transition: background .4s; }
+  .dot.now { background: var(--muted); }
+  .dot.done { background: var(--tc); box-shadow: 0 0 10px var(--tc); }
+
+  .card {
+    background: var(--glass); border: 1px solid var(--edge); border-radius: 22px; padding: 26px 22px;
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+    box-shadow: 0 20px 60px rgba(0, 0, 0, .35);
+  }
+  .enter { animation: rise .35s ease-out; }
+  @keyframes rise { from { opacity: 0; transform: translateY(10px); } }
+
+  .row { display: flex; justify-content: space-between; align-items: baseline; color: var(--muted); font-size: 15px; }
+  .secs { font-size: 26px; font-weight: 800; color: var(--ink); font-variant-numeric: tabular-nums; }
+  .timer { height: 6px; border-radius: 3px; background: rgba(150, 210, 255, .15); overflow: hidden; margin: 10px 0 18px; }
+  .timer i { display: block; height: 100%; background: var(--accent); transform-origin: left; }
+  .timer.low i { background: #ff6b6b; }
+  .timer.low + .secs, .low-text { color: #ff8f8f; }
+
+  h1 { font-size: clamp(30px, 8vw, 44px); line-height: 1.05; margin: 4px 0 12px; font-weight: 800; }
+  h2 { font-size: clamp(28px, 7.5vw, 40px); line-height: 1.08; margin: 0 0 18px; font-weight: 800; }
+  p { line-height: 1.55; }
+  .sub { color: var(--muted); margin: 8px 0 0; }
+
+  input {
+    width: 100%; font: inherit; font-size: 20px; padding: 14px 16px; border-radius: 14px;
+    border: 1px solid var(--edge); background: rgba(2, 8, 22, .7); color: var(--ink);
+  }
+  input:focus { outline: 2px solid var(--accent); outline-offset: 2px; }
+  button {
+    font: inherit; font-weight: 700; font-size: 17px; width: 100%; margin-top: 12px;
+    padding: 14px 22px; border-radius: 14px; border: 0; cursor: pointer;
+    background: var(--accent); color: #04223a;
+  }
+  button:hover { filter: brightness(1.1); }
+  button:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
+  button.ghost { background: transparent; border: 1px solid var(--edge); color: var(--ink); }
+  .err { color: #ff8f8f; min-height: 1.4em; margin-top: 10px; font-size: 15px; }
+
+  .zones { list-style: none; padding: 0; margin: 18px 0 6px; display: grid; gap: 7px; }
+  .zones li { display: grid; grid-template-columns: 12px 1fr auto; gap: 10px; align-items: center; font-size: 15px; }
+  .zones .sw { width: 12px; height: 12px; border-radius: 4px; background: var(--tc); box-shadow: 0 0 8px var(--tc); }
+  .zones em { font-style: normal; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+  .answer { font-size: 34px; font-weight: 800; margin: 2px 0 14px; overflow-wrap: anywhere; }
+  .badge {
+    display: inline-block; padding: 8px 18px; border-radius: 999px;
+    font-weight: 800; font-size: 17px; color: #071a2c; background: var(--tc);
+    animation: pop .55s cubic-bezier(.2, 1.6, .4, 1) both, halo 2.2s ease-in-out .55s infinite;
+  }
+  @keyframes pop { from { transform: scale(.3); opacity: 0; } }
+  @keyframes halo { 50% { box-shadow: 0 0 34px 4px var(--tc); } }
+  .score { display: flex; gap: 22px; margin-top: 14px; }
+  .score div { color: var(--muted); font-size: 14px; }
+  .score b { display: block; font-size: 38px; color: var(--ink); font-variant-numeric: tabular-nums; }
+
+  h3 { font-size: 15px; margin: 22px 0 9px; color: var(--muted); font-weight: 600; }
+  .bars { list-style: none; padding: 0; margin: 0; display: grid; gap: 7px; }
+  .bar {
+    position: relative; overflow: hidden; display: flex; justify-content: space-between;
+    padding: 8px 12px; border-radius: 10px; background: rgba(2, 8, 22, .6);
+  }
+  .bar i { position: absolute; inset: 0 auto 0 0; width: 0; background: rgba(90, 170, 255, .28); animation: grow .9s ease-out forwards; }
+  .bar.mine i { background: color-mix(in srgb, var(--tc) 55%, transparent); }
+  .bar span { position: relative; }
+  @keyframes grow { to { width: var(--w); } }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; list-style: none; padding: 0; margin: 0; }
+  .chips li { padding: 6px 12px; border-radius: 999px; border: 1px solid rgba(255, 211, 74, .45); color: #ffe7a3; }
+
+  .spark {
+    position: fixed; width: 8px; height: 8px; border-radius: 50%; pointer-events: none; z-index: 5;
+    background: var(--tc); box-shadow: 0 0 10px var(--tc); animation: fly .9s ease-out forwards;
+  }
+  @keyframes fly { to { transform: translate(var(--dx), var(--dy)) scale(0); opacity: 0; } }
+
+  .total { font-size: 66px; font-weight: 800; line-height: 1; margin: 8px 0 4px; font-variant-numeric: tabular-nums; }
+  .total small { font-size: 24px; color: var(--muted); font-weight: 600; }
+  .recap { list-style: none; padding: 0; margin: 20px 0 6px; display: grid; gap: 11px; }
+  .recap li { display: grid; grid-template-columns: 14px 1fr auto; gap: 12px; align-items: center; }
+  .tile { width: 14px; height: 14px; border-radius: 4px; background: var(--tc); box-shadow: 0 0 10px var(--tc); }
+  .recap small { display: block; color: var(--muted); font-size: 13px; }
+  .recap b { overflow-wrap: anywhere; }
+  .recap em { font-style: normal; font-weight: 800; font-size: 19px; font-variant-numeric: tabular-nums; }
+  .fine { color: var(--muted); font-size: 12px; text-align: center; margin-top: 20px; text-shadow: 0 1px 6px rgba(0, 0, 0, .6); }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; }
+    .bar i { width: var(--w); }
+  }
+</style>
+</head>
+<body>
+<canvas id="sea" aria-hidden="true"></canvas>
+<main>
+  <header>
+    <div class="logo"><span class="gem">◆</span>Rare Find</div>
+    <div class="gauge"><b id="depthM">0 m</b><span id="zoneName">Sunlit zone</span></div>
+  </header>
+  <div id="dots"></div>
+  <section id="stage" aria-live="polite"></section>
+  <p class="fine">Popularity numbers are built-in estimates, not live player data.</p>
+</main>
+
+<script>
+// Each answer: "Name/alias/alias:weight". Higher weight = more people would say it.
+const PROMPTS = [
+  { cat: 'Geography', q: 'Name a US state',
+    a: 'Alabama:1|Alaska:4|Arizona:2|Arkansas:0.7|California:20|Colorado:2|Connecticut:0.6|Delaware:0.4|Florida:10|Georgia:2.5|Hawaii:4|Idaho:0.8|Illinois:2|Indiana:0.8|Iowa:2|Kansas:1|Kentucky:1|Louisiana:1|Maine:1.2|Maryland:0.6|Massachusetts:1|Michigan:1.5|Minnesota:1|Mississippi:0.7|Missouri:0.8|Montana:1|Nebraska:0.7|Nevada:2|New Hampshire:0.5|New Jersey:1|New Mexico:0.6|New York:10|North Carolina:1|North Dakota:0.4|Ohio:3|Oklahoma:0.8|Oregon:1.5|Pennsylvania:1.5|Rhode Island:0.45|South Carolina:0.7|South Dakota:0.5|Tennessee:1|Texas:14|Utah:1|Vermont:0.6|Virginia:1|Washington:3|West Virginia:0.5|Wisconsin:1|Wyoming:0.45',
+    notes: { 'dc': 'Washington, D.C. is a federal district, not a state.', 'washington dc': 'Washington, D.C. is a federal district, not a state.', 'puerto rico': 'Puerto Rico is a US territory, not a state.', 'guam': 'Guam is a US territory, not a state.' } },
+
+  { cat: 'Space', q: 'Name a planet or dwarf planet in our solar system',
+    a: 'Mars:20|Earth:18|Jupiter:14|Saturn:12|Pluto:9|Venus:6|Mercury:5|Neptune:5|Uranus:4|Ceres:1.5|Eris:1|Haumea:0.4|Makemake:0.4',
+    notes: { 'sun': 'The Sun is a star, not a planet.', 'moon': 'The Moon orbits Earth, so it is a moon, not a planet.', 'the moon': 'The Moon orbits Earth, so it is a moon, not a planet.' } },
+
+  { cat: 'Geography', q: 'Name a country in South America',
+    a: 'Brazil:30|Argentina:18|Colombia:10|Peru:10|Chile:9|Venezuela:7|Ecuador:4|Bolivia:4|Uruguay:2.5|Paraguay:2.5|Guyana:0.8|Suriname:0.6',
+    notes: { 'mexico': 'Mexico is in North America.', 'panama': 'Panama is in Central America.', 'costa rica': 'Costa Rica is in Central America.', 'french guiana': 'French Guiana is an overseas region of France, not a country.' } },
+
+  { cat: 'Science', q: 'Name a noble gas',
+    a: 'Neon:25|Helium:22|Argon:15|Xenon:10|Krypton:10|Radon:6|Oganesson:1',
+    notes: { 'hydrogen': 'Hydrogen is reactive, so it is not a noble gas.', 'oxygen': 'Oxygen is very reactive, so it is not a noble gas.', 'nitrogen': 'Nitrogen is not in the noble gas group.' } },
+
+  { cat: 'Computer science', q: 'Name a programming language',
+    a: 'Python:20|JavaScript/js:16|Java:12|C++/cpp:8|C:6|C#/csharp:6|TypeScript/ts:3|SQL:3|Rust:2|Go/golang:2|PHP:2|Swift:2|Ruby:1.5|Kotlin:1.2|R:1|Scratch:1|Assembly/asm:0.8|Bash/shell:0.8|Perl:0.5|Lua:0.5|MATLAB:0.5|Dart:0.4|Visual Basic/vb/vbnet:0.4|Scala:0.3|Haskell:0.3|Fortran:0.3|COBOL:0.3|Lisp:0.2|Julia:0.2|Pascal:0.2|Objective-C/objc:0.2|PowerShell:0.2|Elixir:0.1|Erlang:0.1|Clojure:0.1|F#/fsharp:0.1|OCaml:0.08|Prolog:0.08|Zig:0.06|Groovy:0.06|Ada:0.05|Racket:0.05|Scheme:0.05|Delphi:0.05|Smalltalk:0.04|Elm:0.04|Nim:0.03|Crystal:0.03',
+    notes: { 'html': 'HTML is a markup language. It describes a page but has no logic, so it is not a programming language.', 'css': 'CSS is a style sheet language, not a programming language.', 'json': 'JSON is a data format, not a programming language.', 'markdown': 'Markdown is a formatting syntax, not a programming language.', 'english': 'Nice try.' } },
+
+  { cat: 'Language', q: 'Name a letter of the Greek alphabet',
+    a: 'Alpha:20|Beta:12|Omega:12|Delta:10|Pi:10|Gamma:8|Sigma:7|Theta:5|Lambda:5|Epsilon:3|Mu:2|Omicron:2|Zeta:1.5|Phi:1.5|Psi:1|Chi:1|Rho:1|Tau:1|Kappa:1|Eta:0.7|Iota:0.7|Nu:0.6|Xi:0.5|Upsilon:0.5' },
+
+  { cat: 'Calendar', q: 'Name a month with 31 days',
+    a: 'January:20|December:15|July:15|March:12|August:12|May:10|October:9',
+    notes: { 'april': 'April has 30 days.', 'june': 'June has 30 days.', 'september': 'September has 30 days.', 'november': 'November has 30 days.', 'february': 'February has 28 days, or 29 in a leap year.' } },
+
+  { cat: 'Animals', q: 'Name a bird that cannot fly',
+    a: 'Penguin:30|Ostrich:25|Emu:15|Kiwi:10|Dodo:6|Cassowary:4|Rhea:2|Kakapo:1.5|Takahe:0.5|Moa:0.4|Weka:0.4|Great Auk:0.3|Flightless Cormorant/galapagos cormorant:0.3|Steamer Duck:0.2|Elephant Bird:0.2|Inaccessible Island Rail:0.1',
+    notes: { 'chicken': 'Chickens can flutter-fly short distances.', 'turkey': 'Wild turkeys can fly, and fast.', 'peacock': 'Peafowl can fly short distances.' } },
+
+  { cat: 'History', q: 'Give the last name of a US president',
+    suffix: true,
+    a: 'Lincoln/abe/honest abe:20|Washington:18|Obama:8|Trump:8|Kennedy/jfk:6|Roosevelt/fdr/teddy:6|Jefferson:5|Biden:4|Reagan:4|Bush:3|Clinton:3|Nixon:3|Adams:2|Carter:1.5|Grant:1.2|Jackson:1.2|Eisenhower/ike:1.2|Truman:1|Johnson/lbj:1|Madison:1|Monroe:0.7|Wilson:0.7|Ford:0.7|Hoover:0.6|Taft:0.5|McKinley:0.4|Coolidge:0.4|Polk:0.3|Harrison:0.3|Van Buren:0.3|Cleveland:0.3|Garfield:0.3|Hayes:0.2|Harding:0.2|Tyler:0.2|Taylor:0.2|Pierce:0.15|Fillmore:0.15|Buchanan:0.15|Arthur:0.15',
+    notes: { 'franklin': 'Benjamin Franklin was never president.', 'hamilton': 'Alexander Hamilton was never president.' } },
+
+  { cat: 'Food', q: 'Name a fruit',
+    a: 'Apple:18|Banana:16|Orange:10|Strawberry:8|Grape:6|Mango:5|Watermelon:5|Pineapple:4|Cherry:3|Peach:3|Pear:3|Blueberry:3|Kiwi/kiwifruit:2|Lemon:2|Raspberry:1.5|Lime:1|Plum:1|Coconut:1|Papaya:1|Pomegranate:1|Apricot:0.8|Cantaloupe:0.8|Grapefruit:0.8|Blackberry:0.8|Tomato:0.6|Avocado:0.6|Fig:0.5|Nectarine:0.5|Honeydew:0.5|Cranberry:0.5|Tangerine:0.4|Dragon Fruit/pitaya:0.4|Passion Fruit:0.4|Guava:0.4|Melon:0.3|Lychee/litchi:0.3|Persimmon:0.3|Clementine:0.3|Date:0.3|Starfruit/carambola:0.2|Jackfruit:0.2|Durian:0.2|Kumquat:0.15|Gooseberry:0.15|Mulberry:0.15|Quince:0.1|Elderberry:0.1|Rambutan:0.1|Olive:0.1|Cucumber:0.1|Pumpkin:0.1|Pawpaw:0.08|Cherimoya:0.05|Feijoa:0.05|Salak/snake fruit:0.05|Mangosteen:0.05|Loquat:0.05',
+    notes: { 'carrot': 'Carrots are roots, not fruit.', 'potato': 'Potatoes are tubers, not fruit.', 'lettuce': 'Lettuce is leaves, not fruit.', 'broccoli': 'Broccoli is a flower bud, not a fruit.' } },
+
+  { cat: 'Games', q: 'Name a chess piece',
+    a: 'King:25|Queen:22|Pawn:16|Knight/horse:14|Rook/castle:10|Bishop:10' },
+
+  { cat: 'Science', q: 'Name a bone in the human body',
+    a: 'Femur:18|Skull/cranium:12|Rib:10|Spine/vertebra/vertebrae/backbone:8|Tibia:6|Humerus/funny bone:5|Pelvis/hip bone:5|Clavicle/collarbone:4|Fibula:4|Radius:3|Ulna:3|Jaw/jawbone/mandible:3|Sternum/breastbone:2|Scapula/shoulder blade:2|Patella/kneecap:2|Phalanges/phalanx:1|Coccyx/tailbone:1|Stapes/stirrup:0.8|Sacrum:0.5|Maxilla:0.4|Tarsal/tarsals:0.4|Carpal/carpals:0.4|Metacarpal/metacarpals:0.3|Metatarsal/metatarsals:0.3|Hyoid:0.3|Malleus/hammer:0.3|Incus/anvil:0.3|Calcaneus/heel bone:0.2|Talus:0.2|Atlas:0.15|Axis:0.15|Ilium:0.15|Ischium:0.1|Pubis:0.1|Scaphoid:0.1|Navicular:0.08|Cuboid:0.08|Zygomatic/cheekbone:0.1|Sphenoid:0.06|Ethmoid:0.05|Vomer:0.05|Lacrimal:0.05|Hamate:0.05|Lunate:0.05|Pisiform:0.04|Trapezium:0.04|Trapezoid:0.04|Capitate:0.04|Triquetrum:0.04|Occipital:0.06|Parietal:0.06|Temporal:0.06|Frontal:0.06|Nasal:0.05|Palatine:0.04|Cuneiform:0.04' }
+];
+PROMPTS.push(
+  { cat: 'Geography', q: 'Name a country in Europe',
+    a: 'France:18|Germany:16|Italy:14|Spain:12|United Kingdom/uk/great britain/britain:8|England:5|Greece:4|Portugal:4|Ireland:3|Netherlands/holland:3|Sweden:3|Norway:3|Switzerland:3|Poland:3|Ukraine:2|Russia:2|Belgium:2|Austria:2|Denmark:2|Finland:1.5|Iceland:1.5|Scotland:1.5|Croatia:1|Czech Republic/czechia/czech:1|Hungary:1|Romania:0.8|Turkey/turkiye:0.6|Serbia:0.5|Wales:0.5|Bulgaria:0.4|Slovakia:0.3|Slovenia:0.3|Estonia:0.3|Luxembourg:0.3|Monaco:0.3|Vatican City/vatican/holy see:0.3|Malta:0.3|Latvia:0.25|Lithuania:0.25|Cyprus:0.2|Albania:0.2|Belarus:0.2|Bosnia and Herzegovina/bosnia:0.15|Montenegro:0.1|North Macedonia/macedonia:0.1|Moldova:0.1|Northern Ireland:0.1|Kosovo:0.08|Andorra:0.08|San Marino:0.08|Liechtenstein:0.08|Georgia:0.05',
+    notes: { 'europe': 'Europe is the continent. Name a country in it.', 'scandinavia': 'Scandinavia is a region, not a country.' } },
+
+  { cat: 'Music', q: 'Name an instrument you’d find in an orchestra',
+    a: 'Violin:20|Cello:12|Flute:10|Trumpet:10|Clarinet:7|Piano:6|Viola:5|Trombone:5|Tuba:4|French Horn/horn:4|Harp:3|Double Bass/bass/contrabass/string bass/upright bass:3|Timpani/kettle drum:2|Bassoon:2|Oboe:4|Snare Drum/drum/snare:1.5|Cymbals/cymbal:1.5|Triangle:1.5|Piccolo:1.5|Xylophone:1|Bass Drum:0.5|Glockenspiel:0.5|Saxophone/sax:0.5|Celesta:0.3|English Horn/cor anglais:0.3|Tam-tam/gong:0.3|Organ:0.3|Tambourine:0.3|Contrabassoon:0.2|Tubular Bells/chimes:0.2|Marimba:0.2|Castanets:0.2|Harpsichord:0.2|Bass Clarinet:0.2|Wood Block:0.1|Vibraphone:0.1|Euphonium:0.1',
+    notes: { 'guitar': 'Guitars rarely appear in a standard orchestra.', 'electric guitar': 'Electric guitars rarely appear in a standard orchestra.', 'ukulele': 'Ukuleles aren’t part of a standard orchestra.' } },
+
+  { cat: 'The ocean', q: 'Name an ocean or a sea',
+    a: 'Pacific Ocean/pacific:25|Atlantic Ocean/atlantic:22|Indian Ocean/indian:10|Arctic Ocean/arctic:8|Mediterranean Sea/mediterranean:6|Caribbean Sea/caribbean:5|Southern Ocean/southern/antarctic ocean:3|Red Sea/red:3|Dead Sea/dead:3|Black Sea/black:2|Caspian Sea/caspian:1.5|North Sea:1.5|Baltic Sea/baltic:1|South China Sea:0.8|Sea of Japan/east sea:0.5|Arabian Sea/arabian:0.5|Bering Sea/bering:0.5|Coral Sea/coral:0.4|Adriatic Sea/adriatic:0.4|Aegean Sea/aegean:0.4|Tasman Sea/tasman:0.3|Sargasso Sea/sargasso:0.3|Yellow Sea/yellow:0.2|Ionian Sea/ionian:0.2|Irish Sea:0.2|Barents Sea/barents:0.1|Weddell Sea/weddell:0.1|Ross Sea:0.1|Labrador Sea/labrador:0.1|Andaman Sea/andaman:0.1|Beaufort Sea/beaufort:0.1|Philippine Sea:0.1|East China Sea:0.1|Tyrrhenian Sea/tyrrhenian:0.1|Java Sea:0.05|Celebes Sea/celebes:0.05|Sulu Sea/sulu:0.05|Ligurian Sea/ligurian:0.05|Kara Sea:0.05|Laptev Sea/laptev:0.05',
+    notes: { 'gulf of mexico': 'That’s a gulf. This prompt wants an ocean or sea.', 'lake superior': 'That’s a lake, not a sea.' } }
+);
+
+function normalize(s) {
+  return String(s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .trim().replace(/^(the|a|an)\s+/, '').replace(/[^a-z0-9+#]/g, '');
+}
+
+for (const p of PROMPTS) {
+  p.answers = p.a.split('|').map(entry => {
+    const cut = entry.lastIndexOf(':');
+    const names = entry.slice(0, cut).split('/');
+    return { name: names[0], keys: names.map(normalize), w: parseFloat(entry.slice(cut + 1)) };
+  });
+  p.total = p.answers.reduce((s, a) => s + a.w, 0);
+  p.max = Math.max(...p.answers.map(a => a.w));
+  p.map = new Map();
+  p.answers.forEach((a, i) => a.keys.forEach(k => p.map.set(k, i)));
+  p.noteMap = {};
+  for (const [k, v] of Object.entries(p.notes || {})) p.noteMap[normalize(k)] = v;
+}
+
+function lev(a, b) {
+  const dp = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    let prev = dp[0]; dp[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const tmp = dp[j];
+      dp[j] = Math.min(dp[j] + 1, dp[j - 1] + 1, prev + (a[i - 1] === b[j - 1] ? 0 : 1));
+      prev = tmp;
+    }
+  }
+  return dp[b.length];
+}
+
+function match(p, input) {
+  const n = normalize(input);
+  if (!n) return { miss: true };
+  const variants = [n, n.replace(/ies$/, 'y'), n.replace(/es$/, ''), n.replace(/s$/, '')];
+  for (const v of variants) if (p.map.has(v)) return { i: p.map.get(v) };
+  for (const v of variants) if (p.noteMap[v]) return { miss: true, note: p.noteMap[v] };
+  if (p.suffix) {
+    let best = -1, len = 0;
+    for (const [k, i] of p.map) if (k.length >= 4 && n.endsWith(k) && k.length > len) { best = i; len = k.length; }
+    if (best >= 0) return { i: best };
+    for (const [k, v] of Object.entries(p.noteMap)) if (k.length >= 4 && n.endsWith(k)) return { miss: true, note: v };
+  }
+  if (n.length >= 6) {
+    let best = 99, bi = -1, tie = false;
+    for (const [k, i] of p.map) {
+      if (Math.abs(k.length - n.length) > 2) continue;
+      const d = lev(n, k);
+      if (d < best) { best = d; bi = i; tie = false; }
+      else if (d === best && i !== bi) tie = true;
+    }
+    if (best <= (n.length >= 9 ? 2 : 1) && !tie) return { i: bi, fuzzy: true };
+  }
+  return { miss: true };
+}
+
+// Six rarity tiers, named after the real ocean zones. Each point = 10 m of depth.
+const TIERS = [
+  { min: 97, pts: 100, label: 'Trench floor', color: '#ffd34a', emoji: '🟨' },
+  { min: 88, pts: 90, label: 'Hadal zone', color: '#ff9f43', emoji: '🟧' },
+  { min: 72, pts: 75, label: 'Abyssal zone', color: '#b07cff', emoji: '🟪' },
+  { min: 45, pts: 50, label: 'Midnight zone', color: '#5aa9ff', emoji: '🟦' },
+  { min: 15, pts: 25, label: 'Twilight zone', color: '#5ee6a8', emoji: '🟩' },
+  { min: 0, pts: 10, label: 'Sunlit zone', color: '#d6ecff', emoji: '⬜' }
+];
+const MISS = { pts: 0, label: 'No match', color: '#ff6b6b', emoji: '⬛' };
+const tierFor = rec => rec.miss ? MISS : TIERS.find(t => rec.raw >= t.min);
+
+function score(p, input) {
+  const m = match(p, input);
+  if (m.miss) return { input, miss: true, note: m.note || '', pts: 0 };
+  const a = p.answers[m.i];
+  const raw = Math.round(100 * (1 - a.w / p.max));
+  const rec = { input, i: m.i, name: a.name, fuzzy: !!m.fuzzy, raw, share: a.w / p.total * 100 };
+  rec.pts = tierFor(rec).pts;
+  return rec;
+}
+// LOGIC END
+
+const ROUND = 7, SECONDS = 25, M_PER_PT = 10, FLOOR = 7000;
+
+function mulberry32(seed) {
+  return function () {
+    seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+    let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+const rnd = (r, a, b) => a + r() * (b - a);
+
+/* =========================================================
+   THE SEA: a canvas scene that follows your total depth
+   ========================================================= */
+const sea = document.getElementById('sea');
+const sx = sea.getContext('2d');
+let SW = 0, SH = 0;
+function sizeSea() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  SW = innerWidth; SH = innerHeight;
+  sea.width = SW * dpr; sea.height = SH * dpr;
+  sx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+addEventListener('resize', sizeSea);
+sizeSea();
+
+let cam = 0, camTarget = 0, st = 0;
+const ppm = () => SH / 260;               // pixels per meter: one screen shows about 260 m
+const anchor = () => SH * 0.45;           // the submersible sits here on screen
+const toScreen = y => (y - cam) * ppm() + anchor();
+const toWorld = sy => cam + (sy - anchor()) / ppm();
+
+const ZONES = [
+  { d: 0, name: 'Sunlit zone' }, { d: 200, name: 'Twilight zone' }, { d: 1000, name: 'Midnight zone' },
+  { d: 4000, name: 'Abyssal zone' }, { d: 6000, name: 'Hadal zone' }
+];
+function zoneAt(d) {
+  if (d >= FLOOR - 15) return 'Trench floor';
+  let z = ZONES[0].name;
+  for (const q of ZONES) if (d >= q.d) z = q.name;
+  return z;
+}
+
+const WATER = [[0, [34, 160, 210]], [200, [12, 84, 130]], [1000, [6, 40, 78]], [4000, [3, 15, 38]], [6000, [2, 7, 18]], [7200, [1, 2, 7]]];
+function waterAt(d) {
+  if (d <= 0) return WATER[0][1];
+  for (let i = 1; i < WATER.length; i++) {
+    if (d <= WATER[i][0]) {
+      const [d0, c0] = WATER[i - 1], [d1, c1] = WATER[i];
+      const k = (d - d0) / (d1 - d0);
+      return c0.map((v, j) => Math.round(v + (c1[j] - v) * k));
+    }
+  }
+  return WATER[WATER.length - 1][1];
+}
+const rgb = (c, m = 1) => `rgb(${c.map(v => Math.round(v * m)).join(',')})`;
+
+function wallX(y, side) {
+  const base = SW > 900 ? 0.07 : 0.045;
+  const n = base + 0.028 * Math.sin(y * 0.013 + side * 2) + 0.016 * Math.sin(y * 0.051 + side * 5) + 0.008 * Math.sin(y * 0.17 + side);
+  const w = Math.max(14, SW * n);
+  return side ? SW - w : w;
+}
+
+// --- build the world once, from a fixed seed so it never changes ---
+const W = mulberry32(20261110);
+const coral = [], shrimp = [], jellies = [], anglers = [];
+
+function genBranch(len, ang, depth, segs, x, y) {
+  const x2 = x + Math.cos(ang) * len, y2 = y + Math.sin(ang) * len;
+  segs.push([x, y, x2, y2, depth]);
+  if (depth > 0) {
+    const n = W() < 0.5 ? 2 : 3;
+    for (let i = 0; i < n; i++) genBranch(len * rnd(W, 0.6, 0.8), ang + rnd(W, -0.6, 0.6), depth - 1, segs, x2, y2);
+  }
+}
+const CORAL_HUES = [345, 12, 28, 285, 320, 185];
+for (const side of [0, 1]) {
+  for (let y = 3; y < 195; y += rnd(W, 5, 10)) {
+    const type = ['branch', 'fan', 'tube', 'brain'][Math.floor(W() * 4)];
+    const c = { y, side, type, hue: CORAL_HUES[Math.floor(W() * CORAL_HUES.length)], size: rnd(W, 14, 28), ph: rnd(W, 0, 6.3), segs: [] };
+    if (type === 'branch') genBranch(c.size * 0.45, -1.2 + rnd(W, -0.25, 0.25), 3, c.segs, 0, 0);
+    if (type === 'tube') c.n = 3 + Math.floor(W() * 3);
+    coral.push(c);
+  }
+}
+for (let i = 0; i < 80; i++) {
+  shrimp.push({ y: Math.pow(W(), 1.7) * 1600 + 6, x: rnd(W, 0.15, 0.85), dir: W() < 0.5 ? -1 : 1,
+    sp: rnd(W, 0.0004, 0.0011), s: rnd(W, 6, 12), hue: rnd(W, 0, 24), ph: rnd(W, 0, 6.3) });
+}
+for (let i = 0; i < 46; i++) {
+  jellies.push({ y: rnd(W, 160, 4800), x: rnd(W, 0.15, 0.85), s: rnd(W, 9, 24), hue: rnd(W, 170, 320), ph: rnd(W, 0, 6.3) });
+}
+for (let i = 0; i < 16; i++) {
+  anglers.push({ y: rnd(W, 1100, 6700), x: rnd(W, 0.18, 0.82), s: rnd(W, 18, 34), dir: W() < 0.5 ? -1 : 1, ph: rnd(W, 0, 6.3) });
+}
+const snow = Array.from({ length: 130 }, () => ({ x: W(), y: W(), z: rnd(W, 0.3, 1) }));
+const bubbles = [];
+
+// --- drawing helpers ---
+function glowDot(x, y, r, color, alpha) {
+  const g = sx.createRadialGradient(x, y, 0, x, y, r);
+  g.addColorStop(0, color.replace('A', alpha));
+  g.addColorStop(1, color.replace('A', 0));
+  sx.fillStyle = g;
+  sx.fillRect(x - r, y - r, r * 2, r * 2);
+}
+
+function drawCoral(c, x, y) {
+  sx.save();
+  sx.translate(x, y);
+  if (c.side) sx.scale(-1, 1);
+  sx.rotate(Math.sin(st * 0.02 + c.ph) * 0.05);
+  const col = `hsl(${c.hue},75%,62%)`, dark = `hsl(${c.hue},60%,42%)`;
+  sx.strokeStyle = col; sx.fillStyle = col; sx.lineCap = 'round';
+  if (c.type === 'branch') {
+    for (const [x1, y1, x2, y2, d] of c.segs) {
+      sx.lineWidth = 1.2 + d * 1.3;
+      sx.beginPath(); sx.moveTo(x1, y1); sx.lineTo(x2, y2); sx.stroke();
+      if (d === 0) { sx.beginPath(); sx.arc(x2, y2, 2.2, 0, 6.3); sx.fill(); }
+    }
+  } else if (c.type === 'fan') {
+    sx.lineWidth = 1.2;
+    for (let a = -2.5; a <= -0.4; a += 0.18) {
+      sx.beginPath(); sx.moveTo(0, 0); sx.lineTo(Math.cos(a) * c.size, Math.sin(a) * c.size); sx.stroke();
+    }
+    for (const k of [0.45, 0.7, 0.95]) { sx.beginPath(); sx.arc(0, 0, c.size * k, -2.5, -0.4); sx.stroke(); }
+  } else if (c.type === 'tube') {
+    for (let i = 0; i < c.n; i++) {
+      const h = c.size * (0.55 + 0.45 * Math.sin(i * 2.3 + c.ph) ** 2), w = c.size * 0.18, ox = i * w * 1.25;
+      sx.fillStyle = col; sx.fillRect(ox, -h, w, h);
+      sx.fillStyle = dark; sx.beginPath(); sx.ellipse(ox + w / 2, -h, w / 2, w / 4, 0, 0, 6.3); sx.fill();
+    }
+  } else {
+    sx.beginPath(); sx.ellipse(c.size * 0.45, -c.size * 0.28, c.size * 0.5, c.size * 0.32, 0, 0, 6.3); sx.fill();
+    sx.strokeStyle = dark; sx.lineWidth = 1.4; sx.beginPath();
+    for (let k = 0; k <= 20; k++) {
+      const px = c.size * (0.05 + k * 0.04), py = -c.size * 0.28 + Math.sin(k * 1.4) * c.size * 0.12;
+      k ? sx.lineTo(px, py) : sx.moveTo(px, py);
+    }
+    sx.stroke();
+  }
+  sx.restore();
+}
+
+function drawShrimp(o, x, y) {
+  const s = o.s;
+  sx.save();
+  sx.translate(x, y);
+  sx.scale(o.dir, 1);
+  if (cam > 250) {
+    sx.globalCompositeOperation = 'lighter';
+    glowDot(0, 0, s * 3, `hsla(${o.hue + 10},100%,65%,A)`, Math.min(0.35, cam / 2500));
+    sx.globalCompositeOperation = 'source-over';
+  }
+  const flick = Math.sin(st * 0.25 + o.ph) * 0.1 * s;
+  const P0 = [s, 0], P1 = [-0.2 * s, -0.85 * s], P2 = [-0.9 * s, 0.35 * s + flick];
+  const B = u => [(1 - u) ** 2 * P0[0] + 2 * (1 - u) * u * P1[0] + u * u * P2[0],
+                  (1 - u) ** 2 * P0[1] + 2 * (1 - u) * u * P1[1] + u * u * P2[1]];
+  sx.strokeStyle = `hsla(${o.hue},80%,78%,.75)`; sx.lineWidth = 0.8;
+  for (const k of [0, 1]) {
+    sx.beginPath(); sx.moveTo(s * 0.95, -s * 0.12);
+    sx.quadraticCurveTo(s * 1.8, -s * (0.9 + k * 0.35) + Math.sin(st * 0.1 + o.ph + k) * s * 0.25, s * 2.7, -s * (0.15 + k * 0.55));
+    sx.stroke();
+  }
+  for (let u = 0.15; u < 0.6; u += 0.1) {
+    const p = B(u);
+    sx.beginPath(); sx.moveTo(p[0], p[1] + s * 0.15);
+    sx.lineTo(p[0] + s * 0.12, p[1] + s * 0.45 + Math.sin(st * 0.4 + u * 10) * s * 0.06); sx.stroke();
+  }
+  for (let i = 10; i >= 0; i--) {
+    const u = i / 10, p = B(u);
+    sx.fillStyle = i % 2 ? `hsl(${o.hue},85%,62%)` : `hsl(${o.hue},90%,72%)`;
+    sx.beginPath(); sx.arc(p[0], p[1], s * (0.34 - 0.22 * u), 0, 6.3); sx.fill();
+  }
+  const pt = B(1);
+  sx.fillStyle = `hsl(${o.hue},85%,66%)`;
+  sx.beginPath(); sx.moveTo(pt[0], pt[1]); sx.lineTo(pt[0] - s * 0.5, pt[1] + s * 0.35); sx.lineTo(pt[0] + s * 0.05, pt[1] + s * 0.5); sx.closePath(); sx.fill();
+  sx.fillStyle = '#10131c';
+  sx.beginPath(); sx.arc(s * 0.82, -s * 0.16, s * 0.09, 0, 6.3); sx.fill();
+  sx.restore();
+}
+
+function drawJelly(o, x, y) {
+  const p = Math.sin(st * 0.06 + o.ph), s = o.s;
+  const bw = s * (1 + 0.12 * p), bh = s * (0.8 - 0.1 * p);
+  sx.globalCompositeOperation = 'lighter';
+  glowDot(x, y, s * 3.2, `hsla(${o.hue},100%,65%,A)`, 0.3);
+  sx.globalCompositeOperation = 'source-over';
+  sx.strokeStyle = `hsla(${o.hue},100%,80%,.55)`; sx.lineWidth = 1;
+  for (let i = 0; i < 5; i++) {
+    const tx = x - bw * 0.7 + i * bw * 0.35;
+    sx.beginPath(); sx.moveTo(tx, y);
+    for (let k = 1; k <= 7; k++) sx.lineTo(tx + Math.sin(st * 0.05 + o.ph + k * 0.8 + i) * 3.5, y + k * s * 0.42);
+    sx.stroke();
+  }
+  sx.beginPath(); sx.ellipse(x, y, bw, bh, 0, Math.PI, 0); sx.closePath();
+  sx.fillStyle = `hsla(${o.hue},90%,72%,.45)`; sx.fill();
+  sx.strokeStyle = `hsla(${o.hue},100%,85%,.9)`; sx.lineWidth = 1.5; sx.stroke();
+}
+
+function drawAngler(o, x, y) {
+  const s = o.s;
+  sx.save();
+  sx.translate(x, y + Math.sin(st * 0.03 + o.ph) * 6);
+  sx.scale(o.dir, 1);
+  const lx = s * 1.4 + Math.sin(st * 0.05 + o.ph) * s * 0.1, ly = -s * 0.95;
+  sx.globalCompositeOperation = 'lighter';
+  glowDot(lx, ly, s * 2.4, 'hsla(185,100%,70%,A)', 0.55 + 0.2 * Math.sin(st * 0.15 + o.ph));
+  sx.globalCompositeOperation = 'source-over';
+  sx.fillStyle = '#121722'; sx.strokeStyle = 'rgba(120,210,230,.3)'; sx.lineWidth = 1.2;
+  sx.beginPath(); sx.moveTo(-s * 0.9, 0); sx.lineTo(-s * 1.6, -s * 0.5); sx.lineTo(-s * 1.5, s * 0.5); sx.closePath(); sx.fill(); sx.stroke();
+  sx.beginPath(); sx.ellipse(0, 0, s, s * 0.72, 0, 0, 6.3); sx.fill(); sx.stroke();
+  sx.fillStyle = '#05070b';
+  sx.beginPath(); sx.moveTo(s, -s * 0.05); sx.lineTo(s * 0.35, s * 0.18); sx.lineTo(s * 0.95, s * 0.45); sx.closePath(); sx.fill();
+  sx.fillStyle = '#dfe9f2';
+  for (let i = 0; i < 4; i++) {
+    const tx = s * (0.45 + i * 0.15);
+    sx.beginPath(); sx.moveTo(tx, s * 0.12); sx.lineTo(tx + s * 0.05, s * 0.28); sx.lineTo(tx + s * 0.1, s * 0.14); sx.fill();
+  }
+  sx.beginPath(); sx.arc(s * 0.55, -s * 0.3, s * 0.1, 0, 6.3); sx.fill();
+  sx.strokeStyle = 'rgba(160,220,235,.6)';
+  sx.beginPath(); sx.moveTo(s * 0.3, -s * 0.62); sx.quadraticCurveTo(s * 0.9, -s * 1.5, lx, ly); sx.stroke();
+  sx.fillStyle = '#eaffff';
+  sx.beginPath(); sx.arc(lx, ly, s * 0.12, 0, 6.3); sx.fill();
+  sx.restore();
+}
+
+function drawSub(x, y, dark) {
+  sx.save();
+  sx.translate(x, y + Math.sin(st * 0.04) * 4);
+  if (dark > 0.05) {
+    sx.globalCompositeOperation = 'lighter';
+    const g = sx.createRadialGradient(26, 3, 0, 26, 3, 300);
+    g.addColorStop(0, `rgba(255,240,200,${0.4 * dark})`);
+    g.addColorStop(1, 'rgba(255,240,200,0)');
+    sx.fillStyle = g;
+    sx.beginPath(); sx.moveTo(26, 3); sx.lineTo(320, -70); sx.lineTo(320, 150); sx.closePath(); sx.fill();
+    sx.globalCompositeOperation = 'source-over';
+  }
+  sx.fillStyle = '#ffcc3d'; sx.strokeStyle = '#b97c00'; sx.lineWidth = 2;
+  sx.beginPath(); sx.ellipse(0, 0, 27, 15, 0, 0, 6.3); sx.fill(); sx.stroke();
+  sx.beginPath(); sx.roundRect ? sx.roundRect(-9, -23, 18, 11, 4) : sx.rect(-9, -23, 18, 11); sx.fill(); sx.stroke();
+  sx.fillStyle = '#9be7ff';
+  sx.beginPath(); sx.arc(9, -1, 6, 0, 6.3); sx.fill(); sx.stroke();
+  sx.fillStyle = '#b97c00';
+  sx.beginPath(); sx.ellipse(-30, 0, 3, 9 * Math.abs(Math.sin(st * 0.5)) + 1, 0, 0, 6.3); sx.fill();
+  sx.fillStyle = '#fff6d8';
+  sx.beginPath(); sx.arc(26, 3, 3, 0, 6.3); sx.fill();
+  sx.restore();
+}
+
+function drawScene(dt) {
+  const ppmv = ppm(), topD = toWorld(0), botD = toWorld(SH);
+
+  // water gradient (sky above the surface when it is on screen)
+  const g = sx.createLinearGradient(0, 0, 0, SH);
+  const steps = 6;
+  for (let i = 0; i <= steps; i++) {
+    const d = topD + (botD - topD) * i / steps;
+    g.addColorStop(i / steps, d < 0 ? '#9fdcff' : rgb(waterAt(d)));
+  }
+  sx.globalCompositeOperation = 'source-over'; sx.globalAlpha = 1;
+  sx.fillStyle = g; sx.fillRect(0, 0, SW, SH);
+  const surf = toScreen(0);
+  if (surf > 0) {
+    sx.fillStyle = 'rgba(255,255,255,.55)';
+    sx.beginPath(); sx.moveTo(0, surf);
+    for (let x = 0; x <= SW; x += 20) sx.lineTo(x, surf + Math.sin(x * 0.03 + st * 0.05) * 3);
+    sx.lineTo(SW, surf + 3); sx.lineTo(0, surf + 3); sx.fill();
+  }
+
+  // sunlight shafts
+  const sun = Math.max(0, 1 - cam / 230);
+  if (sun > 0) {
+    sx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 5; i++) {
+      const x = SW * (i + 0.5) / 5 + Math.sin(st * 0.004 + i) * 80, w = 40 + 30 * Math.sin(st * 0.003 + i * 2);
+      const rg = sx.createLinearGradient(0, Math.max(0, surf), 0, SH);
+      rg.addColorStop(0, `rgba(200,240,255,${0.16 * sun})`); rg.addColorStop(1, 'rgba(200,240,255,0)');
+      sx.fillStyle = rg;
+      const y0 = Math.max(0, surf);
+      sx.beginPath(); sx.moveTo(x - w * 0.3, y0); sx.lineTo(x + w * 0.3, y0); sx.lineTo(x + w * 2 + 140, SH); sx.lineTo(x - w * 2 + 140, SH); sx.closePath(); sx.fill();
+    }
+    sx.globalCompositeOperation = 'source-over';
+  }
+
+  // rock walls on both sides
+  for (const side of [0, 1]) {
+    const y0 = Math.max(0, surf);
+    if (y0 >= SH) break;
+    const wg = sx.createLinearGradient(0, y0, 0, SH);
+    wg.addColorStop(0, rgb(waterAt(Math.max(0, toWorld(y0))), 0.45));
+    wg.addColorStop(1, rgb(waterAt(botD), 0.45));
+    sx.fillStyle = wg;
+    sx.beginPath(); sx.moveTo(side ? SW : 0, y0);
+    for (let syy = y0; syy <= SH + 12; syy += 12) sx.lineTo(wallX(toWorld(syy), side), syy);
+    sx.lineTo(side ? SW : 0, SH + 12); sx.closePath(); sx.fill();
+  }
+
+  // coral on the shallow wall
+  if (topD < 220) {
+    for (const c of coral) {
+      const y = toScreen(c.y);
+      if (y < -60 || y > SH + 60) continue;
+      drawCoral(c, wallX(c.y, c.side), y);
+    }
+  }
+
+  // depth ticks and zone lines
+  sx.font = '600 12px "Bricolage Grotesque", sans-serif';
+  sx.fillStyle = 'rgba(200,230,255,.55)'; sx.strokeStyle = 'rgba(200,230,255,.3)'; sx.lineWidth = 1;
+  for (let d = Math.max(100, Math.ceil(topD / 100) * 100); d <= Math.min(FLOOR, botD); d += 100) {
+    const y = toScreen(d), wx = wallX(d, 1);
+    const big = d % 500 === 0;
+    sx.beginPath(); sx.moveTo(wx - (big ? 16 : 8), y); sx.lineTo(wx, y); sx.stroke();
+    if (big) { sx.textAlign = 'right'; sx.fillText(d.toLocaleString() + ' m', wx - 20, y + 4); }
+  }
+  for (const z of ZONES.slice(1)) {
+    const y = toScreen(z.d);
+    if (y < -20 || y > SH + 20) continue;
+    sx.save(); sx.setLineDash([4, 8]); sx.strokeStyle = 'rgba(200,230,255,.18)';
+    sx.beginPath(); sx.moveTo(wallX(z.d, 0), y); sx.lineTo(wallX(z.d, 1), y); sx.stroke(); sx.restore();
+    sx.textAlign = 'left'; sx.fillText(z.name, wallX(z.d, 0) + 10, y - 6);
+  }
+
+  // trench floor
+  const fy = toScreen(FLOOR) + 26; // the floor sits just under the sub at 7,000 m
+  if (fy < SH + 40) {
+    sx.fillStyle = '#0a0d14';
+    sx.beginPath(); sx.moveTo(0, SH);
+    for (let x = 0; x <= SW; x += 16) sx.lineTo(x, fy + 8 * Math.sin(x * 0.02) + 5 * Math.sin(x * 0.07));
+    sx.lineTo(SW, SH); sx.closePath(); sx.fill();
+    sx.strokeStyle = 'rgba(140,190,220,.25)'; sx.stroke();
+    sx.textAlign = 'center'; sx.fillStyle = 'rgba(255,211,74,.75)';
+    sx.fillText('Trench floor · 7,000 m', SW / 2, fy + 34);
+  }
+
+  // creatures
+  for (const o of jellies) {
+    o.y -= 0.03 * dt;
+    if (o.y < 160) o.y = 4800;
+    const y = toScreen(o.y);
+    if (y > -80 && y < SH + 120) drawJelly(o, o.x * SW, y);
+  }
+  for (const o of shrimp) {
+    o.x += o.dir * o.sp * dt;
+    if (o.x < 0.12 || o.x > 0.88) o.dir *= -1;
+    const y = toScreen(o.y) + Math.sin(st * 0.04 + o.ph) * 5;
+    if (y > -40 && y < SH + 40) drawShrimp(o, o.x * SW, y);
+  }
+  for (const o of anglers) {
+    o.x += o.dir * 0.0003 * dt;
+    if (o.x < 0.15 || o.x > 0.85) o.dir *= -1;
+    const y = toScreen(o.y);
+    if (y > -80 && y < SH + 80) drawAngler(o, o.x * SW, y);
+  }
+
+  // marine snow (moves up past you as you descend)
+  sx.fillStyle = 'rgba(210,235,255,.5)';
+  for (const m of snow) {
+    const y = ((m.y * SH + st * 0.15 * m.z - cam * ppmv * m.z * 0.5) % SH + SH) % SH;
+    sx.globalAlpha = 0.25 + 0.5 * m.z;
+    sx.fillRect(m.x * SW, y, 1.6 * m.z + 0.4, 1.6 * m.z + 0.4);
+  }
+  sx.globalAlpha = 1;
+
+  // the submersible and its bubbles
+  const subX = SW > 900 ? Math.max(80, (SW - 540) / 4) : 50, subY = anchor();
+  const moving = Math.abs(camTarget - cam) > 2;
+  if (Math.random() < (moving ? 0.6 : 0.08) * dt) bubbles.push({ x: subX - 30, y: subY, r: rnd(Math.random, 1.5, 4), life: 120 });
+  sx.strokeStyle = 'rgba(220,245,255,.6)'; sx.lineWidth = 1;
+  for (let i = bubbles.length - 1; i >= 0; i--) {
+    const b = bubbles[i];
+    b.y -= (1 + b.r * 0.3 + (moving ? 3 : 0)) * dt; b.x += Math.sin(b.y * 0.05) * 0.4; b.life -= dt;
+    if (b.life <= 0 || b.y < -10) { bubbles.splice(i, 1); continue; }
+    sx.beginPath(); sx.arc(b.x, b.y, b.r, 0, 6.3); sx.stroke();
+  }
+  drawSub(subX, subY, Math.min(1, cam / 700));
+}
+
+// gauge in the header
+const depthEl = document.getElementById('depthM'), zoneEl = document.getElementById('zoneName');
+let lastShown = -1;
+let last = performance.now();
+function loop(now) {
+  const dt = Math.min(3, (now - last) / 16.67);
+  last = now; st += dt;
+  cam += (camTarget - cam) * Math.min(1, 0.03 * dt);
+  if (Math.abs(camTarget - cam) < 0.5) cam = camTarget;
+  drawScene(dt);
+  const shown = Math.round(cam);
+  if (shown !== lastShown) {
+    lastShown = shown;
+    depthEl.textContent = shown.toLocaleString() + ' m';
+    zoneEl.textContent = zoneAt(shown);
+  }
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+/* =========================================================
+   THE GAME
+   ========================================================= */
+const now = new Date();
+const Y = now.getFullYear(), Mo = now.getMonth(), D = now.getDate();
+const dayKey = `${Y}-${String(Mo + 1).padStart(2, '0')}-${String(D).padStart(2, '0')}`;
+const dayNum = Math.round((Date.UTC(Y, Mo, D) - Date.UTC(2026, 10, 1)) / 864e5) + 1;
+
+function pickSet(r) {
+  const idx = PROMPTS.map((_, i) => i);
+  for (let i = idx.length - 1; i > 0; i--) {
+    const j = Math.floor(r() * (i + 1));
+    [idx[i], idx[j]] = [idx[j], idx[i]];
+  }
+  return idx.slice(0, ROUND);
+}
+
+const STORE = 'rareFindDive:' + dayKey;
+function loadSaved() { try { return JSON.parse(localStorage.getItem(STORE)); } catch (e) { return null; } }
+function save() { try { localStorage.setItem(STORE, JSON.stringify({ set: round.set, results: round.results })); } catch (e) {} }
+
+let round = { mode: 'daily', set: pickSet(mulberry32(dayNum * 7919)), results: [], step: 0 };
+const stage = document.getElementById('stage');
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const pctText = v => v < 0.1 ? 'under 0.1' : v < 1 ? v.toFixed(1) : String(Math.round(v));
+const totalPts = () => round.results.reduce((s, r) => s + r.pts, 0);
+
+function renderDots() {
+  $('dots').innerHTML = round.set.map((_, i) => {
+    const r = round.results[i];
+    if (r) return `<div class="dot done" style="--tc:${tierFor(r).color}"></div>`;
+    return `<div class="dot${i === round.step ? ' now' : ''}"></div>`;
+  }).join('');
+}
+
+function showIntro() {
+  renderDots();
+  const daily = round.mode === 'daily';
+  stage.innerHTML = `
+    <div class="card enter">
+      <div class="row"><span>${daily ? `Daily dive #${dayNum}` : 'Practice dive'}</span><span>${ROUND} prompts</span></div>
+      <h1>How deep can you go?</h1>
+      <p class="sub">You get ${SECONDS} seconds to give one correct answer to each prompt. Obvious answers barely move you. Answers almost nobody thinks of send you deep. Every point is ${M_PER_PT} m, and a perfect dive reaches the trench floor at 7,000 m.</p>
+      <ul class="zones">
+        ${TIERS.slice().reverse().map(t => `<li style="--tc:${t.color}"><span class="sw"></span><span>${t.label}</span><em>${t.pts} pts</em></li>`).join('')}
+      </ul>
+      <button id="go">Start the dive</button>
+    </div>`;
+  $('go').addEventListener('click', showPrompt);
+  $('go').focus();
+}
+
+let timerId = null;
+function stopTimer() { if (timerId) cancelAnimationFrame(timerId); timerId = null; }
+
+function showPrompt() {
+  renderDots();
+  const p = PROMPTS[round.set[round.step]];
+  stage.innerHTML = `
+    <div class="card enter">
+      <div class="row"><span>${p.cat} · ${round.step + 1} of ${ROUND}</span><span class="secs" id="secs">${SECONDS}</span></div>
+      <div class="timer" id="timer"><i id="tbar"></i></div>
+      <h2>${p.q}</h2>
+      <form id="f" autocomplete="off">
+        <input id="in" aria-label="Your answer" placeholder="Your answer" maxlength="60" autocapitalize="off" spellcheck="false">
+        <button type="submit">Lock it in</button>
+      </form>
+      <div class="err" id="err"></div>
+    </div>`;
+  const input = $('in');
+  input.focus();
+  let locked = false;
+  const lock = (value, timedOut) => {
+    if (locked) return;
+    locked = true; stopTimer();
+    let rec;
+    if (!value) rec = { input: '—', miss: true, note: 'Time ran out before you locked in an answer.', pts: 0 };
+    else rec = score(p, value);
+    rec.pi = round.set[round.step];
+    rec.timedOut = !!timedOut;
+    round.results.push(rec);
+    showResult(rec);
+  };
+  $('f').addEventListener('submit', e => {
+    e.preventDefault();
+    const v = input.value.trim();
+    if (!v) { $('err').textContent = 'Type an answer first.'; return; }
+    lock(v, false);
+  });
+  const end = performance.now() + SECONDS * 1000;
+  const bar = $('tbar'), secs = $('secs'), timer = $('timer');
+  (function tick() {
+    const left = Math.max(0, end - performance.now());
+    bar.style.transform = `scaleX(${left / (SECONDS * 1000)})`;
+    secs.textContent = Math.ceil(left / 1000);
+    if (left <= 5000) { timer.classList.add('low'); secs.classList.add('low-text'); }
+    if (left <= 0) { lock(input.value.trim(), true); return; }
+    timerId = requestAnimationFrame(tick);
+  })();
+}
+
+function showResult(rec) {
+  renderDots();
+  const p = PROMPTS[rec.pi];
+  const tier = tierFor(rec);
+  const sorted = p.answers.map((a, i) => ({ ...a, i })).sort((a, b) => b.w - a.w);
+  const top = sorted.slice(0, 4);
+  const rare = sorted.slice(-3).reverse().filter(a => a.i !== rec.i);
+  const last = round.step === ROUND - 1;
+
+  let line;
+  if (rec.miss) line = rec.note ? esc(rec.note) : 'That answer isn’t on the list for this prompt.';
+  else line = `About ${pctText(rec.share)}% of people would say this.` + (rec.timedOut ? ' The clock locked it in for you.' : '');
+
+  stage.innerHTML = `
+    <div class="card enter" style="--tc:${tier.color}">
+      <div class="row"><span>${esc(p.q)}</span></div>
+      <div class="answer">${esc(rec.miss ? rec.input : rec.name)}</div>
+      <span class="badge" id="badge">${tier.label}</span>
+      <div class="score">
+        <div><b id="ptsN">0</b>points</div>
+        <div><b id="mN">+0</b>meters deeper</div>
+      </div>
+      ${rec.fuzzy ? `<p class="sub">Read “${esc(rec.input)}” as ${esc(rec.name)}.</p>` : ''}
+      <p class="sub">${line}</p>
+      <h3>Most common answers</h3>
+      <ol class="bars">
+        ${top.map(a => `<li class="bar${a.i === rec.i ? ' mine' : ''}" style="--w:${(a.w / p.max * 100).toFixed(1)}%">
+          <i></i><span>${esc(a.name)}</span><span>${pctText(a.w / p.total * 100)}%</span></li>`).join('')}
+      </ol>
+      <h3>Deep finds you could have tried</h3>
+      <ul class="chips">${rare.map(a => `<li>${esc(a.name)}</li>`).join('')}</ul>
+      <button id="next">${last ? 'Surface with your results' : 'Next prompt'}</button>
+    </div>`;
+
+  countUp($('ptsN'), rec.pts, '');
+  countUp($('mN'), rec.pts * M_PER_PT, '+');
+  setTimeout(() => { camTarget = totalPts() * M_PER_PT; }, 250);
+  if (rec.pts >= 75) sparkle($('badge'), tier.color, rec.pts >= 100 ? 40 : rec.pts >= 90 ? 26 : 14);
+  const next = $('next');
+  next.focus({ preventScroll: true });
+  next.addEventListener('click', () => {
+    round.step++;
+    if (round.step >= ROUND) { if (round.mode === 'daily') save(); showFinal(); }
+    else showPrompt();
+  });
+}
+
+function countUp(el, target, prefix) {
+  const start = performance.now(), dur = 800;
+  (function tick(t) {
+    const k = Math.min(1, (t - start) / dur);
+    el.textContent = prefix + Math.round(target * (1 - Math.pow(1 - k, 3))).toLocaleString();
+    if (k < 1) requestAnimationFrame(tick);
+  })(start);
+}
+
+function sparkle(el, color, n) {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const r = el.getBoundingClientRect();
+  for (let i = 0; i < n; i++) {
+    const s = document.createElement('span');
+    s.className = 'spark';
+    const a = Math.random() * Math.PI * 2, d = 60 + Math.random() * 120;
+    s.style.cssText = `left:${r.left + r.width / 2}px;top:${r.top + r.height / 2}px;--tc:${color};--dx:${Math.cos(a) * d}px;--dy:${Math.sin(a) * d}px;animation-delay:${Math.random() * 0.15}s`;
+    document.body.appendChild(s);
+    setTimeout(() => s.remove(), 1200);
+  }
+}
+
+function verdict(depth) {
+  if (depth >= 7000) return 'A perfect dive. You touched the trench floor.';
+  if (depth >= 6000) return 'Into the hadal zone. Almost nobody gets this deep.';
+  if (depth >= 4000) return 'Down in the abyss with the anglerfish. Seriously rare answers.';
+  if (depth >= 1000) return 'Past the last of the sunlight and into the midnight zone.';
+  if (depth >= 200) return 'You slipped into the twilight zone. Go stranger next time.';
+  return 'Still splashing around in the sunlit zone. Skip your first idea and dig deeper.';
+}
+
+function showFinal() {
+  round.step = ROUND;
+  renderDots();
+  const pts = totalPts(), depth = pts * M_PER_PT;
+  camTarget = depth;
+  const daily = round.mode === 'daily';
+  stage.innerHTML = `
+    <div class="card enter">
+      <div class="row"><span>${daily ? `Daily dive #${dayNum} complete` : 'Practice dive complete'}</span><span>${pts} / ${ROUND * 100} pts</span></div>
+      <div class="total"><span id="finalM">0</span><small> m</small></div>
+      <p class="sub">${verdict(depth)}</p>
+      <ul class="recap">
+        ${round.results.map(r => {
+          const t = tierFor(r);
+          return `<li><span class="tile" style="--tc:${t.color}"></span>
+            <span><small>${esc(PROMPTS[r.pi].q)}</small><b>${esc(r.miss ? r.input : r.name)}</b></span>
+            <em>${r.pts}</em></li>`;
+        }).join('')}
+      </ul>
+      ${daily ? '<button id="copy">Copy results</button>' : ''}
+      <button class="ghost" id="practice">Take a practice dive</button>
+      ${daily ? '<p class="sub" style="text-align:center">A new daily dive arrives tomorrow.</p>' : ''}
+    </div>`;
+  countUp($('finalM'), depth, '');
+
+  if (daily) {
+    $('copy').addEventListener('click', e => {
+      const text = `Rare Find dive #${dayNum}: ${depth.toLocaleString()} m (${pts}/${ROUND * 100})\n${round.results.map(r => tierFor(r).emoji).join('')}\n${location.href}`;
+      copyText(text).then(ok => { e.target.textContent = ok ? 'Copied' : 'Copy failed. Try again.'; });
+    });
+  }
+  $('practice').addEventListener('click', () => {
+    round = { mode: 'practice', set: pickSet(Math.random), results: [], step: 0 };
+    camTarget = 0;
+    showIntro();
+  });
+}
+
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); return true; }
+  catch (e) {
+    const ta = document.createElement('textarea');
+    ta.value = text; document.body.appendChild(ta); ta.select();
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch (err) {}
+    ta.remove();
+    return ok;
+  }
+}
+
+const saved = loadSaved();
+if (saved && saved.results && saved.results.length === ROUND) {
+  round.set = saved.set; round.results = saved.results;
+  cam = 0;
+  showFinal();
+} else {
+  showIntro();
+}
+</script>
+</body>
+</html>
